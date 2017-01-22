@@ -1,0 +1,90 @@
+---
+title: "Practical Machine Learning Course Project"
+author: "Rafael López"
+date: "January 22, 2017"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Background and Goal of the Project
+
+Devices such as Jawbone Up, Nike FuelBand, and Fitbit allow to collect a large amount of data about personal activity. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, we will use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants who were asked to perform barbell lifts correctly and incorrectly in 5 different ways. 
+Our goal is to build a model that, based on other variables, predicts the way in which the exercise was performed.  
+
+## Getting and Cleaning the Data 
+
+The data for this project comes from this source: http://groupware.les.inf.puc-rio.br/har. In particular, we are asked to download a "training data set" to be used to train and cross-validate the model; and a "test data set" in which to apply our model.
+The following code reads these data sets directly from the Internet:
+
+```{r }
+training<-read.csv("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv")
+test<-read.csv("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv")
+```
+
+Both sets have `r length(colnames(training))` variables, but this does not mean that all variables are the same and that all of them may be used. The following code selects the relevant variables (we decided to pick those variables common to both sets and that didn´t contain any NA's in their observations). We also checked that the class of each chosen variable was the same in both data sets (this was, in fact, the hardest part of the project: the only way we were able to do this was by "row binding" the test set to one observation of the training set and then removing the training set observation).
+```{r }
+## pick variables without NA's
+     training_vars<-colnames(training[sapply(training, function (x) {sum(is.na(x))})==0])
+     test_vars<-colnames(test[sapply(test, function (x) {sum(is.na(x))})==0])
+
+##pick previous variables common to both sets
+     vars<-test_vars[test_vars %in% training_vars][-1]
+     training<-training[,c(vars,"classe")]
+     test<-test[,vars]
+
+##coerce the class of each variable in test to be the same as the corresponding variable in training 
+     test<-rbind(training[1,-59],test)[-1,]
+```
+
+After this cleaning procedure, the test set had `r length(colnames(test))` variables and the trainign set had the same plus one more: the variable "classe" which is the one we are aiming at predicting.  
+
+## Data Slicing, Cross-Validation and Model Selection  
+
+Since the accuracy on the training set is optimistic, we will divide the training set into two sets: one in which to perform the training of the model (myTraining) and another one in which to test its accuracy (myTesting). This is done with the following code:
+
+```{r, message=FALSE, warning=FALSE, error=FALSE}
+library(rpart); library(rpart.plot); library(caret); library(randomForest)
+set.seed(911)
+inTrain <- createDataPartition(training$classe, p=0.6, list=FALSE)
+myTraining <- training[inTrain, ]
+myTesting <- training[-inTrain, ]
+```
+
+Using only the myTraining data, We build two models : one based in trees and another based in random forests
+     
+```{r, message=FALSE, warning=FALSE, error=FALSE}
+set.seed(007)
+mod_tree<- rpart(classe ~ ., data=myTraining, method="class")
+set.seed(666)
+mod_rf <-randomForest(classe ~ ., data=myTraining)
+```
+
+We can assess their in-sample performance by looking at their accuracy:  
+* For mod_tree: `r confusionMatrix(predict(mod_tree,myTraining,"class"),myTraining$classe)$overall[1]`  
+* For mod_rf: `r confusionMatrix(predict(mod_rf,myTraining,"class"),myTraining$classe)$overall[1]`  
+
+As we can see, both models are good but the Random Forest seems way more impressive since it produced a perfect accuracy. However, we know this is overoptimistic: let's see their predictive accuracy in the myTesting set:  
+* For mod_tree: `r confusionMatrix(predict(mod_tree,myTesting,"class"),myTesting$classe)$overall[1]`  
+* For mod_rf: `r confusionMatrix(predict(mod_rf,myTesting,"class"),myTesting$classe)$overall[1]`
+
+Because of its greater accuracy, we decided to choose The Random Forest model.  
+
+## Out of Sample Error Estimate
+Because of the great accuracy of the selected model on the myTesting data, we expect the out of sample error to be very low: `r 100*(1-round(confusionMatrix(predict(mod_rf,myTesting,"class"),myTesting$classe)$overall[1],4))`%  
+
+## Prediction on the Test Set  
+
+The following code yields our model prediction for the test data set:  
+
+```{r, message=FALSE, warning=FALSE, error=FALSE}
+predict(mod_rf,test,"class")
+```
+
+## A Plot with Some Color, Just for Fun
+Here is the Tree Plot for the discarded model, just for fun...
+```{r, echo=FALSE}
+rpart.plot(mod_tree)
+```
